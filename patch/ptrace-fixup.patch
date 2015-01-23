@@ -1,0 +1,46 @@
+    Support ptrace_attach with no signal side-effects.
+    
+    In the normal case, a ptrace_attach operation will convert 
+    a process to TASK_TRACED by sending it a SIGSTOP signal,
+    after setting task->ptrace.  This won't work on a dying
+    process because during do_coredump(), the dying process won't
+    process the STOP signal and change state.
+    
+    Modify ptrace_attach() so that the tracee task state is modified
+    directly.  This allows subsequent ptrace_check_attach() calls
+    to work correctly, and avoids having a pending SIGSTOP signal
+    on the tree process (which interferes with waiting for
+    the core pipe handler).
+
+    Note that a more full-featured implementation of this is in the
+    works (as of March, 2012) by Tejun Heo, called PTRACE_SEIZE.
+    Once that gets mainlined, this patch may not be needed, or might
+    need to be reworked.
+    
+    Signed-off-by: Tim Bird <tim.bird@am.sony.com>
+---
+ ptrace.c |   11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/kernel/ptrace.c b/kernel/ptrace.c
+index 26147d1..9c7bf8e 100644
+--- a/kernel/ptrace.c
++++ b/kernel/ptrace.c
+@@ -223,7 +223,16 @@ static int ptrace_attach(struct task_struct *task)
+ 		task->ptrace |= PT_PTRACE_CAP;
+ 
+ 	__ptrace_link(task, current);
+-	send_sig_info(SIGSTOP, SEND_SIG_FORCED, task);
++	
++	/*
++ 	 * If doing coredump, just convert directly to TASK_TRACED.
++ 	 * A dying process doesn't process signals normally.
++ 	 */
++	if (unlikely(task->mm->core_state)) {
++		set_task_state(task, TASK_TRACED);
++	} else {
++		send_sig_info(SIGSTOP, SEND_SIG_FORCED, task);
++	}
+ 
+ 	spin_lock(&task->sighand->siglock);
+ 
