@@ -40,13 +40,12 @@
 #include "xmalloc.h"
 #include "util.h"
 #include "unwind.h"
+#include "version.h"
 
 #define PASTE(x)		#x
 #define STR(x)			PASTE(x)
 
 #define PROGRAM_NAME		"corehandler"
-#define VERSION			1
-#define REVISION		3
 
 #define TAG_SEPARATOR		"__"
 #define CRASH_REPORT_PATH_FMT	CRASH_REPORT_DIR_PATH "/" CRASH_REPORT_FILENAME TAG_SEPARATOR "%s"
@@ -531,7 +530,7 @@ main(int argc, char **argv)
 		install(argv[0], enable_coredump);
 		return EXIT_SUCCESS;
 	} else if (argc == 2 && !strcmp(argv[1], "--version")) {
-		printf("%d.%d\n", VERSION, REVISION);
+		puts(STR(MAJOR_VERSION) "." STR(MINOR_VERSION) "." STR(PATCH_VERSION));
 		return EXIT_SUCCESS;
 	} else if (argc != 7) {
 		usage();
