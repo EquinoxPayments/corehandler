@@ -1,4 +1,4 @@
-CC = arm gcc
+# CC = arm gcc
 CFLAGS += -std=c99 -D_XOPEN_SOURCE=600 -D_BSD_SOURCE -Wall -Wno-switch
 
 .PHONY: all clean distclean
