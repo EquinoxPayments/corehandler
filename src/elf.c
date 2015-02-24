@@ -9,37 +9,22 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void
-elf_hdr_read(void *ptr, Elf32_Ehdr *hdr)
-{
-	unsigned char	*data = ptr;
-	struct {
-		void	*ptr;
-		size_t	 size;
-	} fields[] = {
-#define Y(x)	{ &hdr->x, sizeof hdr->x }
-		Y(e_ident),
-		Y(e_type),
-		Y(e_machine),
-		Y(e_version),
-		Y(e_entry),
-		Y(e_phoff),
-		Y(e_shoff),
-		Y(e_flags),
-		Y(e_ehsize),
-		Y(e_phentsize),
-		Y(e_phnum),
-		Y(e_shentsize),
-		Y(e_shnum),
-		Y(e_shstrndx),
-#undef Y
-		{ NULL }
-	}, *fld;
+typedef Elf64_Ehdr Elf_Ehdr;
 
-	for (fld = fields; fld->ptr != NULL; ++fld) {
-		memcpy(fld->ptr, data, fld->size);
-		data += fld->size;
-	}
+static void
+elf_print_hdr(const char *name, Elf_Ehdr *hdr)
+{
+	const unsigned char	*ch;
+
+	printf("%s\n", name);
+	printf(" ident: ");
+	for (ch = hdr->e_ident; ch < (hdr->e_ident + EI_NIDENT) && *ch != '\0'; ++ch)
+		putchar(*ch);
+	putchar('\n');
+	printf(" type: %d\n", hdr->e_type);
+	printf(" machine: %d\n", hdr->e_machine);
+	printf(" version: %d\n", hdr->e_version);
+	printf(" entry: 0x%lx\n", (unsigned long)hdr->e_entry);
 }
 
 static void
@@ -48,35 +33,35 @@ elf(const char *path)
 	int		 fd;
 	struct stat	 st;
 	void		*ptr;
-	Elf32_Ehdr	 hdr;
-	unsigned char	*ch;
+	Elf_Ehdr	*hdr;
+
+	if (stat(path, &st) == -1)
+		err(EXIT_FAILURE, "%s: stat", path);
+
+	if (st.st_size < sizeof(Elf_Ehdr))
+		err(EXIT_FAILURE, "%s: file too small for an ELF file", path);
 
 	fd = open(path, O_RDONLY);
 	if (fd == -1)
 		err(EXIT_FAILURE, "%s: open", path);
 
-	if (stat(path, &st) == -1)
-		err(EXIT_FAILURE, "%s: stat", path);
-
 	ptr = mmap(NULL, st.st_size, PROT_READ, MAP_SHARED, fd, 0);
 	if (ptr == MAP_FAILED)
 		err(EXIT_FAILURE, "%s: mmap", path);
+	close(fd);
 
-	elf_hdr_read(ptr, &hdr);
+	hdr = (Elf_Ehdr *)ptr;
 
-	printf("%s\n", path);
-	printf(" ident: ");
-	for (ch = hdr.e_ident; ch < (hdr.e_ident + EI_NIDENT) && *ch != '\0'; ++ch)
-		putchar(*ch);
-	putchar('\n');
-	printf(" type: %d\n machine: %d\n version: %d\n",
-	    hdr.e_type,
-	    hdr.e_machine,
-	    hdr.e_version);
+	if (hdr->e_ehsize != sizeof(Elf_Ehdr)) {
+		err(EXIT_FAILURE, "%s: ELF header size is %lu, should be %lu",
+		    path,
+		    (unsigned long)hdr->e_ehsize,
+		    (unsigned long)sizeof(Elf_Ehdr));
+	}
+
+	elf_print_hdr(path, hdr);
 
 	munmap(ptr, st.st_size);
-
-	close(fd);
 }
 
 int
