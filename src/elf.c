@@ -5,73 +5,101 @@
 #include <unistd.h>
 #include <err.h>
 #include <elf.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#define TARGET_BITS 64
+
+#if TARGET_BITS == 64
+typedef Elf64_Ehdr Elf_Ehdr;
+typedef Elf64_Shdr Elf_Shdr;
+#else
+typedef Elf32_Ehdr Elf_Ehdr;
+typedef Elf32_Shdr Elf_Shdr;
+#endif
+
+/*
+ * An ELF file.
+ */
+struct ef {
+	char		*path;	// Filesystem path to ELF file.
+	const char	*ptr;	// Pointer to memory map of the whole file.
+	size_t		 size;	// Size of memory map.
+	const Elf_Ehdr	*hdr;	// Pointer to ELF header.
+	unsigned long	 shnum;	// Number of section headers.
+};
+
 #if 0
 // possible api
-struct elf_file {
-	const char	*path;
-	const void	*ptr;	// Memory map of the whole file.
-	size_t		 size;	// Size of memory map.
-	const Elf_Ehdr	*eh;
-	size_t		 shnum;
-	const Elf_Shdr	*sh;
-};
 struct elf_file *ef;
-ef = elf_open("aksdhas");
+ef = elf_open("/path/to/elf");
 const char *elf_resolve_addr(ef, 0x123123);
 addr = elf_resolve_name(ef, "ajshdasd");
 addr = elf_xlate_virt_addr(ef, 0x123123, base);
 elf_close(ef);
 #endif
 
-#define MACHINE_BITS	64
-#define CAT(x, y)	x##y
-#define EVAL_CAT(x, y)	CAT(x, y)
-
-typedef EVAL_CAT(EVAL_CAT(Elf, MACHINE_BITS), _Ehdr) Elf_Ehdr;
-typedef EVAL_CAT(EVAL_CAT(Elf, MACHINE_BITS), _Shdr) Elf_Shdr;
-
+#define Y(x)	{ x, #x }
 static const struct strtab {
 	unsigned long	 key;
 	const char	*val;
-}  classes[] = {
-	{ ELFCLASSNONE, "invalid" },
-	{ ELFCLASS32, "32" },
-	{ ELFCLASS64, "64" },
-	{ 0, NULL }
+} classes[] = {
+	Y(ELFCLASSNONE),
+	Y(ELFCLASS32),
+	Y(ELFCLASS64),
+	{ 0, NULL },
 }, dataencodings[] = {
-	{ ELFDATANONE, "invalid" },
-	{ ELFDATA2LSB, "2's comp. little endian" },
-	{ ELFDATA2MSB, "2's comp. big endian" },
+	Y(ELFDATANONE),
+	Y(ELFDATA2LSB),
+	Y(ELFDATA2MSB),
 	{ 0, NULL },
 }, abis[] = {
-	{ ELFOSABI_NONE, "none" },
-	{ ELFOSABI_SYSV, "UNIX System V" },
-	{ ELFOSABI_HPUX, "HP-UX" },
-	{ ELFOSABI_NETBSD, "NetBSD" },
-	{ ELFOSABI_GNU, "GNU" },
-	{ ELFOSABI_SOLARIS, "Solaris" },
-	{ ELFOSABI_AIX, "IBM AIX" },
-	{ ELFOSABI_IRIX, "SGI Irix" },
-	{ ELFOSABI_FREEBSD, "FreeBSD" },
-	{ ELFOSABI_TRU64, "Compaq TRU64 UNIX" },
-	{ ELFOSABI_MODESTO, "Novell Modesto" },
-	{ ELFOSABI_OPENBSD, "OpenBSD" },
-	{ ELFOSABI_ARM_AEABI, "ARM EABI" },
-	{ ELFOSABI_ARM, "ARM" },
-	{ ELFOSABI_STANDALONE, "Standalone (embedded) application" },
+	Y(ELFOSABI_NONE),
+	Y(ELFOSABI_SYSV),
+	Y(ELFOSABI_HPUX),
+	Y(ELFOSABI_NETBSD),
+	Y(ELFOSABI_GNU),
+	Y(ELFOSABI_SOLARIS),
+	Y(ELFOSABI_AIX),
+	Y(ELFOSABI_IRIX),
+	Y(ELFOSABI_FREEBSD),
+	Y(ELFOSABI_TRU64),
+	Y(ELFOSABI_MODESTO),
+	Y(ELFOSABI_OPENBSD),
+	Y(ELFOSABI_ARM_AEABI),
+	Y(ELFOSABI_ARM),
+	Y(ELFOSABI_STANDALONE),
 	{ 0, NULL },
 }, objtypes[] = {
-	{ ET_NONE, "none" },
-	{ ET_REL, "relocatable file" },
-	{ ET_EXEC, "executable file" },
-	{ ET_DYN, "shared object file" },
-	{ ET_CORE, "core file" },
+	Y(ET_NONE),
+	Y(ET_REL),
+	Y(ET_EXEC),
+	Y(ET_DYN),
+	Y(ET_CORE),
+	{ 0, NULL },
+}, sectiontypes[] = {
+	Y(SHT_NULL),
+	Y(SHT_PROGBITS),
+	Y(SHT_SYMTAB),
+	Y(SHT_STRTAB),
+	Y(SHT_RELA),
+	Y(SHT_HASH),
+	Y(SHT_DYNAMIC),
+	Y(SHT_NOTE),
+	Y(SHT_NOBITS),
+	Y(SHT_REL),
+	Y(SHT_SHLIB),
+	Y(SHT_DYNSYM),
+	Y(SHT_INIT_ARRAY),
+	Y(SHT_FINI_ARRAY),
+	Y(SHT_PREINIT_ARRAY),
+	Y(SHT_GROUP),
+	Y(SHT_SYMTAB_SHNDX),
 	{ 0, NULL },
 };
+#undef Y
 
 const char *
 key2str(const struct strtab *tab, int key, const char *dflt)
@@ -81,11 +109,11 @@ key2str(const struct strtab *tab, int key, const char *dflt)
 			return tab->val;
 		++tab;
 	}
-	return NULL;
+	return dflt;
 }
 
 static void
-elf_print_ehdr(const char *name, Elf_Ehdr *h)
+elf_print_ehdr(const char *name, const Elf_Ehdr *h)
 {
 	const char	*tmp;
 
@@ -120,7 +148,6 @@ elf_print_ehdr(const char *name, Elf_Ehdr *h)
 static void
 elf_print_shdr_raw(Elf_Shdr *h)
 {
-
 	printf("Elf_Shdr:\n");
 #define P(x)	printf(" " #x ": 0x%lx\n", (unsigned long)h->x)
 	P(sh_name);
@@ -137,53 +164,180 @@ elf_print_shdr_raw(Elf_Shdr *h)
 #undef P
 }
 
-static void
-elf(const char *path)
+/*
+ * Return header of section i.
+ */
+static const Elf_Shdr *
+elf_get_shdr(const struct ef *ef, unsigned long i)
 {
-	int		 fd;
-	struct stat	 st;
-	void		*ptr;
-	Elf_Ehdr	*hdr;
-	int		 n;
-
-	if (stat(path, &st) == -1)
-		err(EXIT_FAILURE, "%s: stat", path);
-
-	if (st.st_size < sizeof(Elf_Ehdr))
-		err(EXIT_FAILURE, "%s: file too small for an ELF file", path);
-
-	fd = open(path, O_RDONLY);
-	if (fd == -1)
-		err(EXIT_FAILURE, "%s: open", path);
-
-	ptr = mmap(NULL, st.st_size, PROT_READ, MAP_SHARED, fd, 0);
-	if (ptr == MAP_FAILED)
-		err(EXIT_FAILURE, "%s: mmap", path);
-	close(fd);
-
-	hdr = (Elf_Ehdr *)ptr;
-
-	if (hdr->e_ehsize != sizeof(Elf_Ehdr)) {
-		err(EXIT_FAILURE, "%s: ELF header size is %lu, should be %lu",
-		    path,
-		    (unsigned long)hdr->e_ehsize,
-		    (unsigned long)sizeof(Elf_Ehdr));
+	if (i >= ef->shnum) {
+		warnx("attempt to access section header %lu while there are only %lu section headers", i, ef->shnum);
+		return NULL;
 	}
 
-	elf_print_ehdr(path, hdr);
+	return (Elf_Shdr *)(ef->ptr + ef->hdr->e_shoff + ef->hdr->e_shentsize * i);
+}
 
-	n = hdr->e_shnum;
-	for (Elf_Shdr *sh = (Elf_Shdr *)(ptr + hdr->e_shoff); n > 0; --n, ++sh)
-		elf_print_shdr_raw(sh);
+/*
+ * Return pointer to first byte of section i.
+ */
+static const char *
+elf_get_sdata(const struct ef *ef, unsigned long i)
+{
+	const Elf_Shdr	*sh;
 
-	munmap(ptr, st.st_size);
+	sh = elf_get_shdr(ef, i);
+	if (sh == NULL)
+		return NULL;
+	if (sh->sh_type == SHT_NULL || sh->sh_type == SHT_NOBITS) {
+		warnx("attempt to access data of section %lu which has no data (section type is %lu)", i, (unsigned long)sh->sh_type);
+		return NULL;
+	}
+	return ef->ptr + sh->sh_offset;
+}
+
+static void
+elf_print_shdr(struct ef *ef, unsigned long ndx, const Elf_Shdr *sh)
+{
+	const char	*tmp;
+	char		 buf[64];
+	const char	*strtab;
+
+	printf("Section header %lu:\n", ndx);
+
+	strtab = elf_get_sdata(ef, ef->hdr->e_shstrndx);
+
+	printf(" name: %s\n", strtab + sh->sh_name);
+	if (sh->sh_type >= SHT_LOOS) {
+		if (sh->sh_type <= SHT_HIOS)
+			tmp = "SHT_LOOS, SHT_HIOS";
+		else if (sh->sh_type <= SHT_HIPROC)
+			tmp = "SHT_LOPROC, SHT_HIPROC";
+		else if (sh->sh_type <= SHT_HIUSER)
+			tmp = "SHT_LOUSER, SHT_HIUSER";
+		(void)snprintf(buf, sizeof buf, "%lu (%s)", (unsigned long)sh->sh_type, tmp);
+		tmp = buf;
+	} else {
+		tmp = key2str(sectiontypes, sh->sh_type, NULL);
+		if (tmp == NULL) {
+			(void)snprintf(buf, sizeof buf, "%lu (?)", (unsigned long)sh->sh_type);
+			tmp = buf;
+		}
+	}
+	printf(" type: %s\n", tmp);
+}
+
+static bool
+elf_is_valid(const char *ptr, size_t size, const char **errstr)
+{
+	Elf_Ehdr	*e;
+	size_t		 n;
+
+	if (size < sizeof *e) {
+		*errstr = "ELF header goes beyond end of file";
+		return false;
+	}
+
+	e = (Elf_Ehdr *)ptr;
+
+	if (e->e_shoff > 0) {
+		if (e->e_shoff >= size) {
+			*errstr = "first section header is beyond end of file";
+			return false;
+		}
+		if (e->e_shentsize < sizeof(Elf_Shdr)) {
+			*errstr = "size of section headers is less than expected";
+			return false;
+		}
+		if (e->e_shnum > 0) {
+			n = e->e_shnum;
+		} else {
+			n = ((Elf_Shdr *)(ptr + e->e_shoff))->sh_size;
+		}
+		if (e->e_shoff + e->e_shentsize * n > size) {
+			*errstr = "section header table goes beyond end of file";
+			return false;
+		}
+	}
+
+	return true;
+}
+
+/*
+ * Open an ELF file, perform basic sanity checks, return a pointer to filled
+ * struct elf_file.
+ */
+struct ef *
+elf_open(const char *path)
+{
+	struct stat	 st;
+	int		 fd;
+	const void	*ptr;
+	const char	*errstr;
+	struct ef	*ef;
+	Elf_Shdr	*sh;
+
+	if (stat(path, &st) == -1) {
+		warn("%s: stat", path);
+		return NULL;
+	}
+	fd = open(path, O_RDONLY);
+	if (fd == -1) {
+		warn("%s: open", path);
+		return NULL;
+	}
+	ptr = mmap(NULL, st.st_size, PROT_READ, MAP_SHARED, fd, 0);
+	(void)close(fd);
+	if (ptr == MAP_FAILED) {
+		warn("%s: mmap", path);
+		return NULL;
+	}
+
+	if (!elf_is_valid(ptr, st.st_size, &errstr)) {
+		warnx("%s: %s", path, errstr);
+		munmap((void *)ptr, st.st_size);
+		return NULL;
+	}
+
+	ef = malloc(sizeof *ef); // FIXME replace with xmalloc
+	ef->ptr = ptr;
+	ef->size = st.st_size;
+	ef->hdr = ptr;
+	if (ef->hdr->e_shoff > 0) {
+		if (ef->hdr->e_shnum > 0) {
+			ef->shnum = ef->hdr->e_shnum;
+		} else {
+			sh = (Elf_Shdr *)(ef->ptr + ef->hdr->e_shoff);
+			ef->shnum = sh->sh_size;
+		}
+	}
+
+	return ef;
+}
+
+static void
+elf_print_info(const char *path)
+{
+	struct ef	*ef;
+	unsigned long	 i;
+
+	ef = elf_open(path);
+	if (ef == NULL) {
+		warnx("%s: failed to open elf file", path);
+		return;
+	}
+
+	elf_print_ehdr(path, ef->hdr);
+
+	for (i = 0; i < ef->shnum; ++i)
+		elf_print_shdr(ef, i, elf_get_shdr(ef, i));
 }
 
 int
 main(int argc, char **argv)
 {
 	while (--argc)
-		elf(*++argv);
+		elf_print_info(*++argv);
 	return 0;
 }
 
