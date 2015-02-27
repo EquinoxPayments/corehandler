@@ -15,20 +15,22 @@
 #if TARGET_BITS == 64
 typedef Elf64_Ehdr Elf_Ehdr;
 typedef Elf64_Shdr Elf_Shdr;
+typedef Elf64_Sym Elf_Sym;
 #else
 typedef Elf32_Ehdr Elf_Ehdr;
 typedef Elf32_Shdr Elf_Shdr;
+typedef Elf32_Sym Elf_Sym;
 #endif
 
 /*
  * An ELF file.
  */
 struct ef {
-	char		*path;	// Filesystem path to ELF file.
-	const char	*ptr;	// Pointer to memory map of the whole file.
-	size_t		 size;	// Size of memory map.
-	const Elf_Ehdr	*hdr;	// Pointer to ELF header.
-	unsigned long	 shnum;	// Number of section headers.
+	char		*path;		// Filesystem path to ELF file.
+	const char	*ptr;		// Pointer to memory map of the whole file.
+	size_t		 size;		// Size of memory map.
+	const Elf_Ehdr	*hdr;		// Pointer to ELF header.
+	unsigned long	 shnum;		// Number of section headers.
 };
 
 #if 0
@@ -164,6 +166,21 @@ elf_print_shdr_raw(Elf_Shdr *h)
 #undef P
 }
 
+static const Elf_Shdr *
+elf_get_shdr_type(const struct ef *ef, unsigned long type)
+{
+	unsigned long	 i;
+	Elf_Shdr	*sh;
+
+	for (i = 0; i < ef->shnum; ++i) {
+		sh = ef->hdr->e_shoff + ef->hdr->e_shentsize * i;
+		if (sh->sh_type == type)
+			return sh;
+	}
+
+	return NULL;
+}
+
 /*
  * Return header of section i.
  */
@@ -178,17 +195,12 @@ elf_get_shdr(const struct ef *ef, unsigned long i)
 	return (Elf_Shdr *)(ef->ptr + ef->hdr->e_shoff + ef->hdr->e_shentsize * i);
 }
 
-/*
- * Return pointer to first byte of section i.
- */
 static const char *
-elf_get_sdata(const struct ef *ef, unsigned long i)
+elf_get_sdata(const struct ef *ef, const struct Elf_Shdr *sh)
 {
-	const Elf_Shdr	*sh;
-
-	sh = elf_get_shdr(ef, i);
 	if (sh == NULL)
 		return NULL;
+
 	if (sh->sh_type == SHT_NULL || sh->sh_type == SHT_NOBITS) {
 		warnx("attempt to access data of section %lu which has no data (section type is %lu)", i, (unsigned long)sh->sh_type);
 		return NULL;
@@ -205,7 +217,7 @@ elf_print_shdr(struct ef *ef, unsigned long ndx, const Elf_Shdr *sh)
 
 	printf("Section header %lu:\n", ndx);
 
-	strtab = elf_get_sdata(ef, ef->hdr->e_shstrndx);
+	strtab = elf_get_sdata(ef, elf_get_shdr(ef->hdr->e_shstrndx));
 
 	printf(" name: %s\n", strtab + sh->sh_name);
 	if (sh->sh_type >= SHT_LOOS) {
@@ -316,9 +328,24 @@ elf_open(const char *path)
 }
 
 static void
+elf_print_symtabs(const struct ef *ef)
+{
+	const unsigned long	*type;
+	Elf_Shdr		*sh;
+	const char		*data;
+	Elf_Sym			*sym;
+
+	for (type = (unsigned long[]){ SHT_SYMTAB, SHT_DYNSYM, 0 }; *type != 0; type++) {
+		sh = elf_get_shdr_type(ef, *type);
+		data = elf_get_sdata(ef, sh);
+		// TODO
+	}
+}
+
+static void
 elf_print_info(const char *path)
 {
-	struct ef	*ef;
+	const struct ef	*ef;
 	unsigned long	 i;
 
 	ef = elf_open(path);
@@ -331,6 +358,8 @@ elf_print_info(const char *path)
 
 	for (i = 0; i < ef->shnum; ++i)
 		elf_print_shdr(ef, i, elf_get_shdr(ef, i));
+
+	elf_print_symtabs(ef);
 }
 
 int
