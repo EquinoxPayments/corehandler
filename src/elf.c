@@ -148,7 +148,7 @@ elf_print_ehdr(const char *name, const Elf_Ehdr *h)
 }
 
 static void
-elf_print_shdr_raw(Elf_Shdr *h)
+elf_print_shdr_raw(const Elf_Shdr *h)
 {
 	printf("Elf_Shdr:\n");
 #define P(x)	printf(" " #x ": 0x%lx\n", (unsigned long)h->x)
@@ -170,10 +170,10 @@ static const Elf_Shdr *
 elf_get_shdr_type(const struct ef *ef, unsigned long type)
 {
 	unsigned long	 i;
-	Elf_Shdr	*sh;
+	const Elf_Shdr	*sh;
 
 	for (i = 0; i < ef->shnum; ++i) {
-		sh = ef->hdr->e_shoff + ef->hdr->e_shentsize * i;
+		sh = (const Elf_Shdr *)(ef->ptr + ef->hdr->e_shoff + ef->hdr->e_shentsize * i);
 		if (sh->sh_type == type)
 			return sh;
 	}
@@ -196,20 +196,20 @@ elf_get_shdr(const struct ef *ef, unsigned long i)
 }
 
 static const char *
-elf_get_sdata(const struct ef *ef, const struct Elf_Shdr *sh)
+elf_get_sdata(const struct ef *ef, const Elf_Shdr *sh)
 {
 	if (sh == NULL)
 		return NULL;
 
 	if (sh->sh_type == SHT_NULL || sh->sh_type == SHT_NOBITS) {
-		warnx("attempt to access data of section %lu which has no data (section type is %lu)", i, (unsigned long)sh->sh_type);
+		warnx("attempt to access data of section which has no data (section type is %lu)", (unsigned long)sh->sh_type);
 		return NULL;
 	}
 	return ef->ptr + sh->sh_offset;
 }
 
 static void
-elf_print_shdr(struct ef *ef, unsigned long ndx, const Elf_Shdr *sh)
+elf_print_shdr(const struct ef *ef, unsigned long ndx, const Elf_Shdr *sh)
 {
 	const char	*tmp;
 	char		 buf[64];
@@ -217,7 +217,7 @@ elf_print_shdr(struct ef *ef, unsigned long ndx, const Elf_Shdr *sh)
 
 	printf("Section header %lu:\n", ndx);
 
-	strtab = elf_get_sdata(ef, elf_get_shdr(ef->hdr->e_shstrndx));
+	strtab = elf_get_sdata(ef, elf_get_shdr(ef, ef->hdr->e_shstrndx));
 
 	printf(" name: %s\n", strtab + sh->sh_name);
 	if (sh->sh_type >= SHT_LOOS) {
@@ -328,17 +328,51 @@ elf_open(const char *path)
 }
 
 static void
+elf_print_sym_raw(const Elf_Sym *s)
+{
+#define Y(x)	printf("%s: 0x%lx\n", #x, (unsigned long)s->x)
+	Y(st_name);
+	Y(st_value);
+	Y(st_size);
+	Y(st_info);
+	Y(st_other);
+	Y(st_shndx);
+#undef Y
+}
+
+static void
 elf_print_symtabs(const struct ef *ef)
 {
 	const unsigned long	*type;
-	Elf_Shdr		*sh;
+	const Elf_Shdr		*sh;
 	const char		*data;
-	Elf_Sym			*sym;
+	const char		*end;
+	const char		*strtab;
+	const Elf_Sym		*sym;
 
-	for (type = (unsigned long[]){ SHT_SYMTAB, SHT_DYNSYM, 0 }; *type != 0; type++) {
+	printf("\nSymbols:\n");
+
+	for (type = (const unsigned long[]){ SHT_SYMTAB, SHT_DYNSYM, 0 }; *type != 0; type++) {
 		sh = elf_get_shdr_type(ef, *type);
-		data = elf_get_sdata(ef, sh);
-		// TODO
+		if (sh == NULL)
+			continue;
+		elf_print_shdr_raw(sh);
+
+		strtab = elf_get_sdata(ef, elf_get_shdr(ef, sh->sh_link));
+		printf("strtab=%p\n", strtab);
+		printf("strtab: %s\n", strtab);
+
+		data = elf_get_sdata(ef, sh) + sh->sh_entsize;
+		end = ef->ptr + sh->sh_offset + sh->sh_size;
+		while (data < end) {
+			sym = (const Elf_Sym *)data;
+			if (sym->st_name > 0) {
+				printf("[%s]\n", strtab + sym->st_name);
+			}
+			elf_print_sym_raw(sym);
+			printf("\n");
+			data += sh->sh_entsize;
+		}
 	}
 }
 
@@ -362,11 +396,88 @@ elf_print_info(const char *path)
 	elf_print_symtabs(ef);
 }
 
+/*
+ * Memory map.
+ */
+struct map {
+	unsigned long	 start;
+	unsigned long	 end;
+	char		*path;
+	struct {
+		unsigned	r:1;
+		unsigned	w:1;
+		unsigned	x:1;
+	} perm;
+	struct map	*next;
+};
+
+static void
+print_map(const struct map *map)
+{
+	printf("map: %lx-%lx %c%c%c %s\n",
+	    map->start,
+	    map->end,
+	    map->perm.r ? 'r' : '-',
+	    map->perm.w ? 'w' : '-',
+	    map->perm.x ? 'x' : '-',
+	    map->path);
+}
+
+struct map *
+load_maps(pid_t pid)
+{
+	char		 path[1024];
+	FILE		*fp;
+	char		 line[2048];
+	struct map	*map;
+	struct map	*head = NULL;
+	unsigned long	 start;
+	unsigned long	 end;
+	int		 r;
+	int		 w;
+	int		 x;
+	char		*pathp;
+
+	snprintf(path, sizeof path, "/proc/%d/maps", (int)pid);
+
+	fp = fopen(path, "r");
+	while (fgets(line, sizeof line, fp) != NULL) {
+		line[strlen(line) - 1] = '\0';
+		printf("Parsing mem map line: %s\n", line);
+		pathp = strrchr(line, ' ') + 1;
+		if (sscanf(line, "%lx-%lx %c%c%c", &start, &end, &r, &w, &x) == 5) {
+			map = calloc(1, sizeof *map);
+			map->start = start;
+			map->end = end;
+			map->path = strdup(pathp);
+			if (r == 'r')
+				map->perm.r = 1;
+			if (w == 'w')
+				map->perm.w = 1;
+			if (x == 'x')
+				map->perm.x = 1;
+			map->next = head;
+			head = map;
+
+			print_map(map);
+		}
+	}
+
+	return head;
+}
+
 int
 main(int argc, char **argv)
 {
+	struct map	*maps;
+
+	maps = load_maps(getpid());
+
+	printf("main@%p\n", &main);
+
 	while (--argc)
 		elf_print_info(*++argv);
+
 	return 0;
 }
 
