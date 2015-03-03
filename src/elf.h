@@ -7,6 +7,6 @@ struct ef;
 
 struct ef	*elf_open(const char *);
 void		 elf_close(const struct ef *);
-bool		 elf_resolve_func(const struct ef *, unsigned long, const char **, unsigned long *);
+const char	*elf_resolve_sym(const struct ef *, unsigned long);
 
 #endif
