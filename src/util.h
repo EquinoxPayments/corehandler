@@ -34,6 +34,10 @@ void	 warning(const char *, ...);
 #ifdef NDEBUG
 #define debug(...)
 #else
+#if 0 // FIXME
+#define debug(fmt, ...) debug2(fmt, __func__, __VA_ARGS__)
+#define debug2(fmt, funcname, ...) debug3("%s(): " fmt, funcname, __VA_ARGS__)
+#endif
 void	 debug(const char *, ...);
 #endif
 

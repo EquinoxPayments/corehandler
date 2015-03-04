@@ -165,9 +165,27 @@ report_backtrace(struct proc *p)
 {
 	int		 count = 0;
 	struct frame	*f;
+	const char	*name;
+	word_t		 addr;
+	struct map	*map;
 
 	TAILQ_FOREACH(f, &p->backtrace, entry) {
-		printf("#%3d: 0x%08x", count, f->pc);
+		name = NULL;
+		addr = f->pc;
+		LIST_FOREACH(map, &p->maps, entry) {
+			if (map->perm.x && map->ef != NULL
+			    && addr >= map->start && addr < map->end) {
+				if (elf_is_shared_object(map->ef))
+					addr -= map->start;
+				debug("pc=%lx, addr=%lx, found matching map: %s", f->pc, addr, map->str);
+				name = elf_resolve_sym(map->ef, addr);
+				break;
+			}
+		}
+		if (name == NULL)
+			name = "?";
+
+		printf("#%3d: %s 0x%08x", count, name, f->pc);
 		if (f->size > 0) {
 			printf(", frame 0x%08x, size %4u", f->sp, f->size);
 			if (f->lrpos != ~0)

@@ -1,12 +1,12 @@
-# CC = arm gcc
-CFLAGS += -std=c99 -D_XOPEN_SOURCE=600 -D_BSD_SOURCE -Wall -Wno-switch
+CC = arm gcc
+CFLAGS += -std=c99 -D_XOPEN_SOURCE=600 -D_BSD_SOURCE -Wall -pedantic -Wno-switch # FIXME add -Wextra and fix warnings
 
 .PHONY: all clean distclean
 
 all: bin/corehandler
 
-bin/corehandler: bin/ src/main.o src/proc.o src/unwind.o src/util.o src/xmalloc.o
-	$(CC) -o $@ src/main.o src/proc.o src/unwind.o src/util.o src/xmalloc.o
+bin/corehandler: bin/ src/main.o src/proc.o src/unwind.o src/util.o src/xmalloc.o src/elf.o
+	$(CC) -o $@ src/main.o src/proc.o src/unwind.o src/util.o src/xmalloc.o src/elf.o
 
 bin/:
 	mkdir -p $@

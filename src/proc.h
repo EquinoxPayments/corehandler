@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include "elf.h"
 
 /* Max number of arguments to parse from /proc/<pid>/cmdline. */
 #define PROC_MAX_ARGV	24
@@ -39,13 +40,14 @@ typedef uint32_t	 word_t;
 struct map {
 	LIST_ENTRY(map)	 entry;
 	char		*str;	/* copy of original string from /proc/<pid>/maps */
-	unsigned long	 start;	/* low address */
+	unsigned long	 start;	/* low address */ // FIXME better use void* ?
 	unsigned long	 end;	/* high address */
 	struct {		/* access permissions */
 		bool	 r;	/* read */
 		bool	 w;	/* write */
 		bool	 x;	/* execute */
 	} perm;
+	struct ef	*ef;
 };
 
 /*

@@ -162,6 +162,7 @@ parse_maps(struct proc *proc)
 		chop_newline(line);
 		map        = xcalloc(1, sizeof *map);
 		map->str   = xstrdup(line);
+		// FIXME better use sscanf?
 		map->start = strtoul(line, NULL, 16);
 		map->end   = strtoul(line + MAPS_END_OFFSET, NULL, 16);
 		for (p = line + MAPS_PERM_OFFSET; *p != ' ' && *p != '\0'; ++p) {
@@ -176,6 +177,11 @@ parse_maps(struct proc *proc)
 				map->perm.x = true;
 				break;
 			}
+		}
+		if (map->perm.x) {
+			p = strrchr(line, ' ');
+			if (p != NULL)
+				map->ef = elf_open(p + 1);
 		}
 		LIST_INSERT_HEAD(&proc->maps, map, entry);
 	}

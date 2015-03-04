@@ -9,19 +9,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "util.h"
 
-#define TARGET_BITS 64
+#define warn	warning
+#define warnx	warning
+
+#define TARGET_BITS 32
 
 #if TARGET_BITS == 64
 typedef Elf64_Ehdr	Elf_Ehdr;
 typedef Elf64_Shdr	Elf_Shdr;
 typedef Elf64_Sym	Elf_Sym;
-#define ELF_ST_TYPE(x)	ELF64_ST_TYPE(i)
 #else
 typedef Elf32_Ehdr	Elf_Ehdr;
 typedef Elf32_Shdr	Elf_Shdr;
 typedef Elf32_Sym	Elf_Sym;
-#define ELF_ST_TYPE(x)	ELF32_ST_TYPE(i)
 #endif
 #define ALIGN	(sizeof(unsigned long))
 #define IS_ALIGNED(ptr)	(((unsigned long)(ptr) % ALIGN) == 0)
@@ -354,6 +356,7 @@ elf_is_valid(const char *ptr, size_t size, const char **errstr)
 
 	if (e->e_shoff > 0) {
 		if (e->e_shoff >= size) {
+			debug("e_shoff=%lu", (unsigned long)e->e_shoff);
 			*errstr = "first section header is beyond end of file";
 			return false;
 		}
@@ -396,9 +399,9 @@ elf_open(const char *path)
 	}
 	/*
 	 * Regarding ELF data structure alignment:
-	 * Linux mmap(2) manpage promises that the returned pointer will be memory page
-	 * aligned and ELF specification promises that ELF structures are naturally 
-	 * self-aligned.
+	 * Linux mmap(2) manpage promises that the returned pointer will be
+	 * memory page size aligned and ELF specification promises that ELF
+	 * structures are naturally self-aligned.
 	 */
 	ptr = mmap(NULL, st.st_size, PROT_READ, MAP_SHARED, fd, 0);
 	(void)close(fd);
@@ -406,6 +409,7 @@ elf_open(const char *path)
 		warn("%s: mmap", path);
 		return NULL;
 	}
+	debug("mmap'ed %s: ptr=%p, size=%lu", path, ptr, (unsigned long)st.st_size);
 
 	if (!elf_is_valid(ptr, st.st_size, &errstr)) {
 		warnx("%s: %s", path, errstr); // FIXME replace with debug()/warning()/fatal() ...
@@ -444,14 +448,9 @@ elf_close(struct ef *ef)
 static bool
 is_subrange(const char *ptr1, size_t size1, const char *ptr2, size_t size2)
 {
-	const char	*end1;
-	const char	*end2;
-
-	end1 = ptr1 + size1; // FIXME wrong
-	end2 = ptr2 + size2;
-	if (end1 < ptr1 || end2 < ptr2)
-		return false;
-	return ptr1 >= ptr2 && end2 <= end1;
+	if (ptr2 >= ptr1 && size2 <= size1)
+		return true;
+	return false;
 }
 
 static void
@@ -465,6 +464,12 @@ elf_print_sym_raw(const Elf_Sym *s)
 	Y(st_other);
 	Y(st_shndx);
 #undef Y
+}
+
+bool
+elf_is_shared_object(const struct ef *ef)
+{
+	return ef->hdr->e_type == ET_DYN;
 }
 
 // FIXME provide offset from beginning?
@@ -483,7 +488,6 @@ elf_resolve_sym(const struct ef *ef, unsigned long addr)
 	unsigned long		 strtabsize;
 	const char		*data;
 	const Elf_Sym		*sym;
-	int			 i;
 
 	// FIXME need to read out data, cannot just use pointers directly!
 	// FIXME overflow! fix elsewhere too
@@ -506,43 +510,52 @@ elf_resolve_sym(const struct ef *ef, unsigned long addr)
 		strtabhdr = elf_get_shdr_index(ef, symtabhdr->sh_link);
 		if (strtabhdr == NULL)
 			continue;
-		strtab = ef->ptr + strtabhdr->sh_offset;
+		strtab = ef->ptr + strtabhdr->sh_offset; // FIXME potential overflow
 		strtabsize = strtabhdr->sh_size;
+
+		if (!is_subrange(ef->ptr, ef->size, strtab, strtabsize) ||
+		    strtabsize == 0) {
+			warnx("%s: invalid offset/size of symbol name string table", ef->path);
+			return NULL;
+		}
+
+		if (strtab[strtabsize - 1] != '\0') {
+			warnx("%s: symbol name string table is not null-terminated", ef->path);
+			return NULL;
+		}
+
+		if (!is_subrange(ef->ptr, ef->size, ef->ptr + symtabhdr->sh_offset, symtabhdr->sh_size) // FIXME overflow!
+		    || symtabhdr->sh_size == 0) {
+			warnx("%s: invalid offset/size for symbol table", ef->path);
+			return NULL;
+		}
+		if (symtabhdr->sh_entsize < sizeof(Elf_Sym) || symtabhdr->sh_entsize >= ef->size) {
+			warnx("%s: invalid entity size for symbol table", ef->path);
+			return NULL;
+		}
 		
 		/*
 		 * ...walk the symbol table and find the symbol which matches
 		 * the translated address.
 		 */
 
-		// FIXME validate pointers
-		printf("symtab offset: %lu, symtab size: %lu, symtab entsize: %lu\n", (unsigned long)symtabhdr->sh_offset, (unsigned long)symtabhdr->sh_size, (unsigned long)symtabhdr->sh_entsize);
-		printf("mmap ptr: %p\n", ef->ptr);
-		printf("mmap ptr + symtab size: %p\n", ef->ptr + symtabhdr->sh_size);
 		data = ef->ptr + symtabhdr->sh_offset;
-		data += symtabhdr->sh_entsize; /* Skip element 0: it's the 'Undefined Symbol'. */
-		printf("looking at symbols...\n");
-		printf("data: %p\n", data);
-		for (i = 1; data < (ef->ptr + symtabhdr->sh_offset + symtabhdr->sh_size); data += symtabhdr->sh_entsize, i++) {
-			// FIXME the below checks are broken elsewhere, should be > not >=.
-			printf("looking at symbol %d\n", i);
-			if (data > (ef->ptr + ef->size) - sizeof(Elf_Sym) ||
-			    data > (ef->ptr + symtabhdr->sh_offset + symtabhdr->sh_size) - sizeof(Elf_Sym)) {
-				warnx("%s: invalid offset/size for symbol", ef->path);
-				return NULL;
-			}
+		for (data += symtabhdr->sh_entsize; /* Skip element 0: it's the 'Undefined Symbol'. */
+		    data < (ef->ptr + symtabhdr->sh_offset + symtabhdr->sh_size);
+		    data += symtabhdr->sh_entsize) {
 			sym = (const Elf_Sym *)data;
-
-			elf_print_sym_raw(sym);
 
 			// FIXME validate sym values
 			if (addr < sym->st_value || addr >= sym->st_value + sym->st_size)
 				continue;
-			printf("found matching symbol...\n");
+
 			// FIXME check that the name is null terminated OR strdup?
 			if (sym->st_name > 0 && sym->st_name < strtabsize)
 				return strtab + sym->st_name;
-			else
-				return "?";
+			else {
+				debug("symbol found for addr %lx, but it doesn't appear to have a name...", addr);
+				return NULL;
+			}
 		}
 	}
 	return NULL;

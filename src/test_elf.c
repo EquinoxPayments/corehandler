@@ -18,6 +18,7 @@ struct map {
 		unsigned	w:1;
 		unsigned	x:1;
 	} perm;
+	struct ef	*ef;
 	struct map	*next;
 };
 
@@ -64,8 +65,11 @@ load_maps(pid_t pid)
 				map->perm.r = 1;
 			if (w == 'w')
 				map->perm.w = 1;
-			if (x == 'x')
+			if (x == 'x') {
 				map->perm.x = 1;
+				map->ef = elf_open(map->path);
+			}
+
 			map->next = head;
 			head = map;
 
@@ -90,22 +94,20 @@ fmt(const char *fmtspec, ...)
 }
 
 static void
-test(struct ef *ef, struct map *maps)
+test(struct map *maps)
 {
-	static const void	*funcs[] = { fmt, test, load_maps, NULL };
-	const void	**fp;
-	struct map	*mp;
-	unsigned long	 vaddr;
-	unsigned long	 voff;
-	unsigned long	 elfaddr;
-	const char	*name;
+	static const void	*funcs[] = { printf, exit, fmt, test, load_maps, NULL };
+	const void		**fp;
+	struct map		*mp;
+	unsigned long		 vaddr;
+	const char		*name;
 
 	for (fp = funcs; *fp != NULL; fp++) {
 		vaddr = (unsigned long)(*fp);
 		for (mp = maps; mp != NULL; mp = mp->next) {
-			if (vaddr < mp->start || vaddr >= mp->end)
+			if (vaddr < mp->start || vaddr >= mp->end || mp->ef == NULL)
 				continue;
-			name = elf_resolve_sym(ef, vaddr);
+			name = elf_resolve_sym(mp->ef, vaddr);
 			if (name == NULL)
 				name = "unknown";
 			printf("ptr=%lx, name=%s\n", vaddr, name);
@@ -116,20 +118,13 @@ test(struct ef *ef, struct map *maps)
 int
 main(int argc, char **argv)
 {
-	struct ef	*ef;
 	struct map	*maps;
-
-	ef = elf_open(*argv);
-	if (ef == NULL)
-		errx(1, "%s: failed to open elf file", *argv);
 
 	maps = load_maps(getpid());
 	if (maps == NULL)
 		errx(1, "%d: failed to load memory maps", (int)getpid());
 
-	test(ef, maps);
-
-	elf_close(ef);
+	test(maps);
 
 	return 0;
 }
