@@ -181,17 +181,29 @@ fatal(const char *fmt, ...)
 	exit(EXIT_FAILURE);
 }
 
+// FIXME warning vs. warningx
+
 /*
  * Output a warning message to syslog.
  */
 void
 warning(const char *fmt, ...)
 {
-	va_list	 ap;
+	va_list		 ap;
+	char		 buf[4096];
+	size_t		 len;
+	int		 code;
+
+	code = errno;
 
 	va_start(ap, fmt);
-	vsyslog(LOG_WARNING, fmt, ap);
+	(void) vsnprintf(buf, sizeof buf, fmt, ap);
 	va_end(ap);
+
+	len = strlen(buf);
+	(void) snprintf(buf + len, sizeof(buf) - len, ": %d, %s", code, strerror(code));
+
+	syslog(LOG_WARNING, "%s", buf);
 }
 
 #ifndef NDEBUG
