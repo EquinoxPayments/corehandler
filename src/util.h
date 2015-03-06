@@ -30,15 +30,14 @@ char	*chop_newline(char *);
 char	*format(const char *, ...);
 void	 fatalx(const char *, ...);
 void	 fatal(const char *, ...);
+void	 warningx(const char *, ...);
 void	 warning(const char *, ...);
 #ifdef NDEBUG
 #define debug(...)
 #else
-#if 0 // FIXME
-#define debug(fmt, ...) debug2(fmt, __func__, __VA_ARGS__)
-#define debug2(fmt, funcname, ...) debug3("%s(): " fmt, funcname, __VA_ARGS__)
-#endif
-void	 debug(const char *, ...);
+#define debug(...)		_debug(__VA_ARGS__, 0)
+#define _debug(fmt, ...)	debugf("%s(): " fmt, __func__, __VA_ARGS__)
+void	 debugf(const char *, ...);
 #endif
 
 #endif

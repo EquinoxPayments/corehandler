@@ -47,7 +47,7 @@ struct map {
 		bool	 w;	/* write */
 		bool	 x;	/* execute */
 	} perm;
-	struct ef	*ef;
+	struct elf	*elf;
 };
 
 /*

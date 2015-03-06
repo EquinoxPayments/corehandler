@@ -181,10 +181,21 @@ fatal(const char *fmt, ...)
 	exit(EXIT_FAILURE);
 }
 
-// FIXME warning vs. warningx
-
 /*
  * Output a warning message to syslog.
+ */
+void
+warningx(const char *fmt, ...)
+{
+	va_list	 ap;
+
+	va_start(ap, fmt);
+	vsyslog(LOG_WARNING, fmt, ap);
+	va_end(ap);
+}
+
+/*
+ * Same as warningx(), but appends errno and description of errno to message.
  */
 void
 warning(const char *fmt, ...)
@@ -211,7 +222,7 @@ warning(const char *fmt, ...)
  * Output a debug message to syslog.
  */
 void
-debug(const char *fmt, ...)
+debugf(const char *fmt, ...)
 {
 	va_list	 ap;
 

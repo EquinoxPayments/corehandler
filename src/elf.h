@@ -3,11 +3,11 @@
 
 #include <stdbool.h>
 
-struct ef;
+struct elf;
 
-struct ef	*elf_open(const char *);
-void		 elf_close(const struct ef *);
-bool		 elf_is_shared_object(const struct ef *);
-const char	*elf_resolve_sym(const struct ef *, unsigned long);
+struct elf	*elf_open(const char *);
+void		 elf_close(const struct elf *);
+bool		 elf_is_shared_object(const struct elf *);
+bool		 elf_resolve_sym(const struct elf *, unsigned long, char *, size_t);
 
 #endif

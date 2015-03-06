@@ -63,7 +63,6 @@ static void		 generate_report(const char *, struct proc *, time_t);
 static void		 open_report(const char *);
 static uid_t		 to_uid(const char *);
 static gid_t		 to_gid(const char *);
-static void		 redirect_output(int);
 static void		 report_general_info(struct proc *, time_t);
 static void		 report_memory_maps(struct proc *);
 static void		 report_registers(struct pt_regs *);
@@ -165,25 +164,25 @@ report_backtrace(struct proc *p)
 {
 	int		 count = 0;
 	struct frame	*f;
-	const char	*name;
+	char		 name[64];
 	word_t		 addr;
 	struct map	*map;
 
 	TAILQ_FOREACH(f, &p->backtrace, entry) {
-		name = NULL;
+		*name = '\0';
 		addr = f->pc;
 		LIST_FOREACH(map, &p->maps, entry) {
-			if (map->perm.x && map->ef != NULL
+			if (map->perm.x && map->elf != NULL
 			    && addr >= map->start && addr < map->end) {
-				if (elf_is_shared_object(map->ef))
+				if (elf_is_shared_object(map->elf))
 					addr -= map->start;
 				debug("pc=%lx, addr=%lx, found matching map: %s", f->pc, addr, map->str);
-				name = elf_resolve_sym(map->ef, addr);
+				elf_resolve_sym(map->elf, addr, name, sizeof name);
 				break;
 			}
 		}
-		if (name == NULL)
-			name = "?";
+		if (*name == '\0')
+			snprintf(name, sizeof name, "?");
 
 		printf("#%3d: %s 0x%08x", count, name, f->pc);
 		if (f->size > 0) {
@@ -202,15 +201,6 @@ report_stack(struct proc *p)
 	printf("{Call Stack}\n");
 	report_backtrace(p);
 	report_stack_data(p);
-}
-
-static void
-redirect_output(int fd)
-{
-	if (dup2(fd, STDOUT_FILENO) == -1)
-		fatal("failed to redirect stdout");
-	if (dup2(fd, STDERR_FILENO) == -1)
-		fatal("failed to redirect stderr");
 }
 
 static uid_t
@@ -242,24 +232,31 @@ static void
 open_report(const char *tag)
 {
 	const char	*path;
-	int		 fd;
 	struct stat	 st;
 	uid_t		 uid;
 	gid_t		 gid;
+	mode_t		 mask;
 
 	path = format(CRASH_REPORT_PATH_FMT, tag);
-	fd = open(path, O_CREAT | O_TRUNC | O_WRONLY, 0);
-	if (fd == -1)
-		fatal("%s: failed to open crash report file", path);
-	if (fstat(fd, &st) == -1)
-		fatal("%s: failed to fstat", path);
+
+	if (stat(path, &st) == 0 || errno != ENOENT)
+		fatalx("%s: file already exists", path);
+
+	mask = umask(0200);
+	// FIXME seems to work only if there is an fd for this file already???
+	if (freopen(path, "w", stdout) == NULL) // FIXME find evidence freopen plays well with umask
+		fatal("%s: failed to redirect stdout to report file", path);
+	umask(mask);
+
+	if (stat(path, &st) < 0)
+		fatal("%s: failed to stat", path);
 	uid = USER == NULL ? geteuid() : to_uid(USER);
 	gid = GROUP == NULL ? getegid() : to_gid(GROUP);
-	if (fchown(fd, uid, gid) == -1)
-		fatal("%s: fchown %d:%d", path, uid, gid);
-	if (fchmod(fd, CRASH_REPORT_MODE) == -1)
-		fatal("%s: fchmod %o", CRASH_REPORT_MODE); 
-	redirect_output(fd);
+	if (chown(path, uid, gid) < 0)
+		fatal("%s: failed to change owner and group to %d:%d", path, USER, GROUP);
+
+	if (chmod(path, CRASH_REPORT_MODE) < 0)
+		fatal("%s: failed to set permissions to %o", CRASH_REPORT_MODE);
 }
 
 static void
@@ -270,6 +267,7 @@ generate_report(const char *tag, struct proc *p, time_t t)
 	report_registers(&p->regs);
 	report_memory_maps(p);
 	report_stack(p);
+	fflush(stdout);
 }
 
 /*
@@ -569,7 +567,6 @@ main(int argc, char **argv)
 	p = proc_attach(tid, pid, sig, uid, gid);
 	unwind(p);
 	generate_report(tag, p, t);
-	fflush(stdout);
 	proc_detach_and_free(p);
 	unlink_old_reports();
 

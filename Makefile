@@ -5,8 +5,8 @@ CFLAGS += -std=c99 -D_XOPEN_SOURCE=600 -D_BSD_SOURCE -Wall -pedantic -Wno-switch
 
 all: bin/corehandler
 
-bin/corehandler: bin/ src/main.o src/proc.o src/unwind.o src/util.o src/xmalloc.o src/elf.o
-	$(CC) -o $@ src/main.o src/proc.o src/unwind.o src/util.o src/xmalloc.o src/elf.o
+bin/corehandler: bin/ src/main.o src/proc.o src/unwind.o src/util.o src/xmalloc.o src/elf2.o
+	$(CC) -o $@ src/main.o src/proc.o src/unwind.o src/util.o src/xmalloc.o src/elf2.o
 
 bin/:
 	mkdir -p $@

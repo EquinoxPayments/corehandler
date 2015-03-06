@@ -181,7 +181,7 @@ parse_maps(struct proc *proc)
 		if (map->perm.x) {
 			p = strrchr(line, ' ');
 			if (p != NULL)
-				map->ef = elf_open(p + 1);
+				map->elf = elf_open(p + 1);
 		}
 		LIST_INSERT_HEAD(&proc->maps, map, entry);
 	}
@@ -237,6 +237,8 @@ free_maps(struct maps *maps)
 		next = LIST_NEXT(m, entry);
 		LIST_REMOVE(m, entry);
 		free(m->str);
+		if (m->elf != NULL)
+			elf_close(m->elf);
 		free(m);
 		m = next;
 	}
