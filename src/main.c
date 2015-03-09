@@ -163,32 +163,23 @@ static void
 report_backtrace(struct proc *p)
 {
 	int		 count = 0;
-	struct frame	*f;
-	char		 name[64];
-	word_t		 addr;
-	struct map	*map;
+	struct frame	*frame;
+	const char	*elfpath;
 
-	TAILQ_FOREACH(f, &p->backtrace, entry) {
-		*name = '\0';
-		addr = f->pc;
-		LIST_FOREACH(map, &p->maps, entry) {
-			if (map->perm.x && map->elf != NULL
-			    && addr >= map->start && addr < map->end) {
-				if (elf_is_shared_object(map->elf))
-					addr -= map->start;
-				debug("pc=%lx, addr=%lx, found matching map: %s", f->pc, addr, map->str);
-				elf_resolve_sym(map->elf, addr, name, sizeof name);
-				break;
-			}
-		}
-		if (*name == '\0')
-			snprintf(name, sizeof name, "?");
-
-		printf("#%3d: %s 0x%08x", count, name, f->pc);
-		if (f->size > 0) {
-			printf(", frame 0x%08x, size %4u", f->sp, f->size);
-			if (f->lrpos != ~0)
-				printf(", lr@%u", f->lrpos);
+	TAILQ_FOREACH(frame, &p->backtrace, entry) {
+		if ((elfpath = strrchr(frame->map->str, ' ')) != NULL)
+			elfpath++;
+		else
+			elfpath = "??";
+		printf("#%-2d 0x%08x in %s () from %s\n",
+		    count,
+		    frame->pc,
+		    frame->fname == NULL ? "??" : frame->fname,
+		    elfpath);
+		if (frame->size > 0) {
+			printf("    frame 0x%08x, size %u", frame->sp, frame->size);
+			if (frame->lrpos != ~0)
+				printf(", lr@%u", frame->lrpos);
 		}
 		putchar('\n');
 		++count;
@@ -226,7 +217,7 @@ to_gid(const char *grname)
 }
 
 /*
- * Open the report file and redirect stdout into it.
+ * Redirect stdout to report file.
  */
 static void
 open_report(const char *tag)
@@ -242,11 +233,10 @@ open_report(const char *tag)
 	if (stat(path, &st) == 0 || errno != ENOENT)
 		fatalx("%s: file already exists", path);
 
-	mask = umask(0200);
-	// FIXME seems to work only if there is an fd for this file already???
-	if (freopen(path, "w", stdout) == NULL) // FIXME find evidence freopen plays well with umask
+	mask = umask(~0200);
+	if (freopen(path, "w", stdout) == NULL)
 		fatal("%s: failed to redirect stdout to report file", path);
-	umask(mask);
+	(void)umask(mask);
 
 	if (stat(path, &st) < 0)
 		fatal("%s: failed to stat", path);
@@ -522,6 +512,37 @@ generate_tag(pid_t pid)
 	return NULL; /* not reached */
 }
 
+/*
+ * Open/redirect the stdout and stderr file descriptors to /dev/null, so that
+ * the numbers of file descriptors that we open afterwards do not conflict with
+ * standard I/O stream file descriptor numbers.
+ */
+static void
+open_std_output_streams(void)
+{
+	const struct tab {
+		int	 stdfd;
+		int	 openflags;
+	} *tab = (const struct tab[]){
+		{ STDOUT_FILENO, O_WRONLY },
+		{ STDERR_FILENO, O_RDWR },
+		{ -1 }
+	};
+	const char	 path[] = "/dev/null";
+	int		 fd;
+
+	while (tab->stdfd != -1) {
+		fd = open(path, tab->openflags);
+		if (fd < 0)
+			exit(EXIT_FAILURE);
+		if (dup2(fd, tab->stdfd) < 0)
+			exit(EXIT_FAILURE);
+		if (fd != tab->stdfd)
+			close(fd);
+		tab++;
+	}
+}
+
 int
 main(int argc, char **argv)
 {
@@ -535,11 +556,6 @@ main(int argc, char **argv)
 	const char	*tag;
 	time_t		 t;
 
-	t = time(NULL);
-
-	openlog(PROGRAM_NAME, 0, LOG_DAEMON);
-	(void) atexit(closelog);
-
 	if (argc >= 2 && !strcmp(argv[1], "--install")) {
 		if (argc >= 3)
 			enable_coredump = atoi(argv[2]);
@@ -552,6 +568,13 @@ main(int argc, char **argv)
 		usage();
 		return EXIT_FAILURE;
 	}
+
+	t = time(NULL);
+
+	open_std_output_streams();
+
+	openlog(PROGRAM_NAME, 0, LOG_DAEMON);
+	(void)atexit(closelog);
 
 	++argv;
 	enable_coredump = atoi(*argv++);
@@ -567,7 +590,7 @@ main(int argc, char **argv)
 	p = proc_attach(tid, pid, sig, uid, gid);
 	unwind(p);
 	generate_report(tag, p, t);
-	proc_detach_and_free(p);
+	proc_detach(p);
 	unlink_old_reports();
 
 	return EXIT_SUCCESS;

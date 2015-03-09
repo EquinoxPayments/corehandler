@@ -657,6 +657,34 @@ guess_unwind(struct proc *p)
 	}
 }
 
+static void
+resolve_func_names(struct proc *p)
+{
+	struct frame	*frame;
+	struct map	*map;
+	char		 name[128];
+	word_t		 addr;
+
+	TAILQ_FOREACH(frame, &p->backtrace, entry) {
+		*name = '\0';
+		LIST_FOREACH(map, &p->maps, entry) {
+			addr = frame->pc;
+			if (map->perm.x
+			    && map->elf != NULL
+			    && addr >= map->start
+			    && addr < map->end) {
+				frame->map = map;
+				if (elf_is_shared_object(map->elf))
+					addr -= map->start;
+				elf_resolve_sym(map->elf, addr, name, sizeof name);
+				break;
+			}
+		}
+		if (*name != '\0')
+			frame->fname = xstrdup(name);
+	}
+}
+
 /*
  * Unwind the call frames of proc.
  */
@@ -679,5 +707,7 @@ unwind(struct proc *p)
 		guess_unwind(p);
 	else
 		smart_unwind(p);
+
+	resolve_func_names(p);
 }
 

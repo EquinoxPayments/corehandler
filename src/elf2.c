@@ -33,23 +33,12 @@ struct elf {
 	unsigned long	 shnum;	// Number of section headers.
 };
 
-static ssize_t
-seek_read(int fd, off_t off, void *ptr, size_t size)
-{
-	ssize_t	 n;
-
-	if (lseek(fd, off, SEEK_SET) == (off_t)-1)
-		return -1;
-	n = read(fd, ptr, size);
-	return n;
-}
-
 static bool
 read_struct(const struct elf *elf, off_t off, void *ptr, size_t size)
 {
 	ssize_t	 n;
 
-	n = seek_read(elf->fd, off, ptr, size);
+	n = pread(elf->fd, ptr, size, off);
 	return n == (ssize_t)size;
 }
 
@@ -175,10 +164,7 @@ nextsymtab:
 				    elf->path,
 				    (unsigned long)off,
 				    (unsigned long)strtabhdr.sh_offset + sym.st_value);
-				n = seek_read(elf->fd,
-				    strtabhdr.sh_offset + sym.st_name,
-				    buf,
-				    bufsize - 1);
+				n = pread( elf->fd, buf, bufsize - 1, strtabhdr.sh_offset + sym.st_name);
 				if (n < 0) {
 					warning("%s: failed to read symbol name", elf->path);
 					return false;

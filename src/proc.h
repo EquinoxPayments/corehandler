@@ -59,6 +59,9 @@ struct frame {
 	word_t			 sp;	/* Address of the call frame. */
 	word_t			 size;	/* In bytes. */
 	word_t			 lrpos;	/* Word offset of saved LR value in the frame, counting from beginning of frame. */
+	struct map		*map;	/* Memory map to which PC belongs. */
+	word_t			 off;	/* Offset in ELF file to which PC corresponds. */
+	char			*fname;	/* Name of the function to which PC belongs. */
 };
 
 /*
@@ -80,7 +83,7 @@ struct proc {
 };
 
 struct proc	*proc_attach(pid_t, pid_t, int, uid_t, gid_t);
-void		 proc_detach_and_free(struct proc *);
+void		 proc_detach(struct proc *);
 word_t		 peek(struct proc *, word_t);
 
 #endif

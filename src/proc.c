@@ -263,7 +263,7 @@ free_backtrace(struct backtrace *bt)
  * uses.
  */
 void
-proc_detach_and_free(struct proc *p)
+proc_detach(struct proc *p)
 {
 	char		**argp;
 
