@@ -74,14 +74,6 @@ get_shdr_type(const struct elf *elf, Elf_Shdr *shp, unsigned long type)
 	return false;
 }
 
-void
-elf_close(struct elf *elf)
-{
-	free(elf->path);
-	(void)close(elf->fd);
-	free(elf);
-}
-
 struct elf *
 elf_open(const char *path)
 {
@@ -122,6 +114,14 @@ error:
 	return NULL;
 }
 
+void
+elf_close(struct elf *elf)
+{
+	free(elf->path);
+	(void)close(elf->fd);
+	free(elf);
+}
+
 bool
 elf_is_shared_object(const struct elf *elf)
 {
@@ -129,7 +129,7 @@ elf_is_shared_object(const struct elf *elf)
 }
 
 bool
-elf_resolve_sym(const struct elf *elf, unsigned long addr, char *buf, size_t bufsize)
+elf_resolve_sym(const struct elf *elf, unsigned long addr, char *buf, size_t bufsize, unsigned long *offp)
 {
 	const unsigned long	*type = (const unsigned long[]){
 		SHT_SYMTAB,
@@ -144,7 +144,6 @@ elf_resolve_sym(const struct elf *elf, unsigned long addr, char *buf, size_t buf
 
 nextsymtab:
 	while (*type != SHT_NULL) {
-		debug("looking at tab of type %lu\n", *type);
 		if (!get_shdr_type(elf, &symtabhdr, *type++))
 			continue;
 		if (!get_shdr_index(elf, &strtabhdr, symtabhdr.sh_link))
@@ -158,18 +157,14 @@ nextsymtab:
 				warningx("%s: failed to read symbol at offset %lu", elf->path, (unsigned long)off);
 				goto nextsymtab;
 			}
-			if (addr >= sym.st_value
-			    && addr < sym.st_value + sym.st_size) {
-				debug("%s: found matching symbol @%lx, name @%lx",
-				    elf->path,
-				    (unsigned long)off,
-				    (unsigned long)strtabhdr.sh_offset + sym.st_value);
-				n = pread( elf->fd, buf, bufsize - 1, strtabhdr.sh_offset + sym.st_name);
+			if (addr >= sym.st_value && addr < sym.st_value + sym.st_size) {
+				n = pread(elf->fd, buf, bufsize - 1, strtabhdr.sh_offset + sym.st_name);
 				if (n < 0) {
 					warning("%s: failed to read symbol name", elf->path);
 					return false;
 				}
 				buf[n] = '\0';
+				*offp = addr - sym.st_value;
 				return true;
 			}
 		}

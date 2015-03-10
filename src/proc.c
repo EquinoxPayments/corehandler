@@ -253,6 +253,7 @@ free_backtrace(struct backtrace *bt)
 	while (f != NULL) {
 		next = TAILQ_NEXT(f, entry);
 		TAILQ_REMOVE(bt, f, entry);
+		free(f->func.name);
 		free(f);
 		f = next;
 	}

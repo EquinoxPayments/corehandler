@@ -60,8 +60,10 @@ struct frame {
 	word_t			 size;	/* In bytes. */
 	word_t			 lrpos;	/* Word offset of saved LR value in the frame, counting from beginning of frame. */
 	struct map		*map;	/* Memory map to which PC belongs. */
-	word_t			 off;	/* Offset in ELF file to which PC corresponds. */
-	char			*fname;	/* Name of the function to which PC belongs. */
+	struct {
+		char		*name;	/* Name of function PC is pointing into. */
+		word_t		 off;	/* Offset from beginning of function PC is pointing into. */
+	} func;
 };
 
 /*

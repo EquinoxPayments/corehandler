@@ -165,23 +165,38 @@ report_backtrace(struct proc *p)
 	int		 count = 0;
 	struct frame	*frame;
 	const char	*elfpath;
+	const char	*funcname;
+	const char	*funcoff;
 
 	TAILQ_FOREACH(frame, &p->backtrace, entry) {
 		if ((elfpath = strrchr(frame->map->str, ' ')) != NULL)
 			elfpath++;
 		else
 			elfpath = "??";
-		printf("#%-2d 0x%08x in %s () from %s\n",
+
+		if (frame->func.name != NULL) {
+			funcname = frame->func.name;
+			funcoff = format("+%lu", frame->func.off);
+		} else {
+			funcname = "??";
+			funcoff = "";
+		}
+
+		printf("#%-2d 0x%08x in %s%s () from %s\n",
 		    count,
 		    frame->pc,
-		    frame->fname == NULL ? "??" : frame->fname,
+		    funcname,
+		    funcoff,
 		    elfpath);
+
 		if (frame->size > 0) {
 			printf("    frame 0x%08x, size %u", frame->sp, frame->size);
 			if (frame->lrpos != ~0)
 				printf(", lr@%u", frame->lrpos);
 		}
+
 		putchar('\n');
+
 		++count;
 	}
 }

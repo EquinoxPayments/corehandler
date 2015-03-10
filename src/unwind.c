@@ -676,12 +676,11 @@ resolve_func_names(struct proc *p)
 				frame->map = map;
 				if (elf_is_shared_object(map->elf))
 					addr -= map->start;
-				elf_resolve_sym(map->elf, addr, name, sizeof name);
+				if (elf_resolve_sym(map->elf, addr, name, sizeof name, &frame->func.off))
+					frame->func.name = xstrdup(name);
 				break;
 			}
 		}
-		if (*name != '\0')
-			frame->fname = xstrdup(name);
 	}
 }
 
