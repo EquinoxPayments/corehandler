@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 Equinox Payments, LLC
+ * Copyright (c) 2014, 2015 Equinox Payments, LLC
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -162,7 +162,6 @@ parse_maps(struct proc *proc)
 		chop_newline(line);
 		map        = xcalloc(1, sizeof *map);
 		map->str   = xstrdup(line);
-		// FIXME better use sscanf?
 		map->start = strtoul(line, NULL, 16);
 		map->end   = strtoul(line + MAPS_END_OFFSET, NULL, 16);
 		for (p = line + MAPS_PERM_OFFSET; *p != ' ' && *p != '\0'; ++p) {

@@ -176,21 +176,25 @@ report_backtrace(struct proc *p)
 
 		if (frame->func.name != NULL) {
 			funcname = frame->func.name;
-			funcoff = format("+%lu", frame->func.off);
+			funcoff = format("+ %lu", frame->func.off);
 		} else {
 			funcname = "??";
 			funcoff = "";
 		}
 
-		printf("#%-2d 0x%08x in %s%s () from %s\n",
+		printf("#%-2d 0x%08x in %s %s () from %s\n",
 		    count,
 		    frame->pc,
 		    funcname,
 		    funcoff,
 		    elfpath);
 
+		if (frame->pc != frame->func.addr || frame->size > 0)
+			printf("    ");
+		if (frame->pc != frame->func.addr)
+			printf("0x%08x in ELF; ", frame->func.addr);
 		if (frame->size > 0) {
-			printf("    frame 0x%08x, size %u", frame->sp, frame->size);
+			printf("frame 0x%08x, size %u", frame->sp, frame->size);
 			if (frame->lrpos != ~0)
 				printf(", lr@%u", frame->lrpos);
 		}

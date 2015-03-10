@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 Equinox Payments, LLC
+ * Copyright (c) 2014, 2015 Equinox Payments, LLC
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -24,7 +24,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include "elf.h"
+#include "elf_lib.h"
 
 /* Max number of arguments to parse from /proc/<pid>/cmdline. */
 #define PROC_MAX_ARGV	24
@@ -40,7 +40,7 @@ typedef uint32_t	 word_t;
 struct map {
 	LIST_ENTRY(map)	 entry;
 	char		*str;	/* copy of original string from /proc/<pid>/maps */
-	unsigned long	 start;	/* low address */ // FIXME better use void* ?
+	unsigned long	 start;	/* low address */
 	unsigned long	 end;	/* high address */
 	struct {		/* access permissions */
 		bool	 r;	/* read */
@@ -63,6 +63,7 @@ struct frame {
 	struct {
 		char		*name;	/* Name of function PC is pointing into. */
 		word_t		 off;	/* Offset from beginning of function PC is pointing into. */
+		word_t		 addr;	/* Value of PC translated into an "ELF address", this is what gdb will show you if you open the file and `i addr <function>`. */
 	} func;
 };
 
