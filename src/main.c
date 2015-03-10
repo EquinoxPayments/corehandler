@@ -70,6 +70,7 @@ static void		 report_stack(struct proc *);
 static void		 report_backtrace(struct proc *);
 static void		 report_stack_data(struct proc *);
 static void		 unlink_old_reports(void);
+static void		 open_std_output_streams(void);
 
 /*
  * report_*() functions append information to the crash report.

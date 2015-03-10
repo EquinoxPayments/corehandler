@@ -48,6 +48,10 @@ struct elf {
 	unsigned long	 shnum;	/* Number of section headers. */
 };
 
+static bool	 read_block(const struct elf *, off_t, void *, size_t);
+static bool	 get_shdr_index(const struct elf *, Elf_Shdr *, unsigned long);
+static bool	 get_shdr_type(const struct elf *, Elf_Shdr *, unsigned long);
+
 /*
  * Read a block from ELF file, return true if successful.
  */
