@@ -190,17 +190,20 @@ report_backtrace(struct proc *p)
 		    funcoff,
 		    elfpath);
 
-		if (frame->pc != frame->func.addr || frame->size > 0)
+		if (frame->pc != frame->func.addr || frame->size > 0) {
 			printf("    ");
-		if (frame->pc != frame->func.addr)
-			printf("0x%08x in ELF; ", frame->func.addr);
-		if (frame->size > 0) {
-			printf("frame 0x%08x, size %u", frame->sp, frame->size);
-			if (frame->lrpos != ~0)
-				printf(", lr@%u", frame->lrpos);
-		}
 
-		putchar('\n');
+			if (frame->pc != frame->func.addr)
+				printf("0x%08x in ELF; ", frame->func.addr);
+
+			if (frame->size > 0) {
+				printf("frame 0x%08x, size %u", frame->sp, frame->size);
+				if (frame->lrpos != ~0)
+					printf(", lr@%u", frame->lrpos);
+			}
+
+			putchar('\n');
+		}
 
 		++count;
 	}
