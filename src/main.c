@@ -177,13 +177,13 @@ report_backtrace(struct proc *p)
 
 		if (frame->func.name != NULL) {
 			funcname = frame->func.name;
-			funcoff = format("+ %lu", frame->func.off);
+			funcoff = format(" + %lu", frame->func.off);
 		} else {
 			funcname = "??";
 			funcoff = "";
 		}
 
-		printf("#%-2d 0x%08x in %s %s () from %s\n",
+		printf("#%-2d 0x%08x in %s%s () from %s\n",
 		    count,
 		    frame->pc,
 		    funcname,

@@ -47,7 +47,7 @@ struct map {
 		bool	 w;	/* write */
 		bool	 x;	/* execute */
 	} perm;
-	struct elf	*elf;
+	struct elf	*elf;	/* handle for the corresponding ELF file */
 };
 
 /*
@@ -59,10 +59,10 @@ struct frame {
 	word_t			 sp;	/* Address of the call frame. */
 	word_t			 size;	/* In bytes. */
 	word_t			 lrpos;	/* Word offset of saved LR value in the frame, counting from beginning of frame. */
-	struct map		*map;	/* Memory map to which PC belongs. */
+	struct map		*map;	/* Memory map into which PC is pointing. */
 	struct {
-		char		*name;	/* Name of function PC is pointing into. */
-		word_t		 off;	/* Offset from beginning of function PC is pointing into. */
+		char		*name;	/* Name of function into which PC is pointing. */
+		word_t		 off;	/* Offset from beginning of function PC is pointing at. */
 		word_t		 addr;	/* Value of PC translated into an "ELF address", this is what gdb will show you if you open the file and `i addr <function>`. */
 	} func;
 };

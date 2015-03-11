@@ -44,7 +44,7 @@ typedef Elf32_Sym	Elf_Sym;
 struct elf {
 	char		*path;	/* Filesystem path to ELF file. */
 	int		 fd;	/* File descriptor of an open ELF file. */
-	Elf_Ehdr	 hdr;	/* Pointer to ELF header. */
+	Elf_Ehdr	 hdr;	/* ELF header. */
 	unsigned long	 shnum;	/* Number of section headers. */
 };
 

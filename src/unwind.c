@@ -666,7 +666,7 @@ resolve_func_names(struct proc *p)
 {
 	struct frame	*frame;
 	struct map	*map;
-	char		 name[128];
+	char		 name[256];
 	word_t		 addr;
 	unsigned long	 off;
 
