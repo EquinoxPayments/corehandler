@@ -63,7 +63,6 @@ static void		 generate_report(const char *, struct proc *, time_t);
 static void		 open_report(const char *);
 static uid_t		 to_uid(const char *);
 static gid_t		 to_gid(const char *);
-static void		 redirect_output(int);
 static void		 report_general_info(struct proc *, time_t);
 static void		 report_memory_maps(struct proc *);
 static void		 report_registers(struct pt_regs *);
@@ -71,6 +70,7 @@ static void		 report_stack(struct proc *);
 static void		 report_backtrace(struct proc *);
 static void		 report_stack_data(struct proc *);
 static void		 unlink_old_reports(void);
+static void		 open_std_output_streams(void);
 
 /*
  * report_*() functions append information to the crash report.
@@ -164,16 +164,47 @@ static void
 report_backtrace(struct proc *p)
 {
 	int		 count = 0;
-	struct frame	*f;
+	struct frame	*frame;
+	const char	*elfpath;
+	const char	*funcname;
+	const char	*funcoff;
 
-	TAILQ_FOREACH(f, &p->backtrace, entry) {
-		printf("#%3d: 0x%08x", count, f->pc);
-		if (f->size > 0) {
-			printf(", frame 0x%08x, size %4u", f->sp, f->size);
-			if (f->lrpos != ~0)
-				printf(", lr@%u", f->lrpos);
+	TAILQ_FOREACH(frame, &p->backtrace, entry) {
+		if ((elfpath = strrchr(frame->map->str, ' ')) != NULL)
+			elfpath++;
+		else
+			elfpath = "??";
+
+		if (frame->func.name != NULL) {
+			funcname = frame->func.name;
+			funcoff = format(" + %lu", frame->func.off);
+		} else {
+			funcname = "??";
+			funcoff = "";
 		}
-		putchar('\n');
+
+		printf("#%-2d 0x%08x in %s%s () from %s\n",
+		    count,
+		    frame->pc,
+		    funcname,
+		    funcoff,
+		    elfpath);
+
+		if (frame->pc != frame->func.addr || frame->size > 0) {
+			printf("    ");
+
+			if (frame->pc != frame->func.addr)
+				printf("0x%08x in ELF; ", frame->func.addr);
+
+			if (frame->size > 0) {
+				printf("frame 0x%08x, size %u", frame->sp, frame->size);
+				if (frame->lrpos != ~0)
+					printf(", lr@%u", frame->lrpos);
+			}
+
+			putchar('\n');
+		}
+
 		++count;
 	}
 }
@@ -184,15 +215,6 @@ report_stack(struct proc *p)
 	printf("{Call Stack}\n");
 	report_backtrace(p);
 	report_stack_data(p);
-}
-
-static void
-redirect_output(int fd)
-{
-	if (dup2(fd, STDOUT_FILENO) == -1)
-		fatal("failed to redirect stdout");
-	if (dup2(fd, STDERR_FILENO) == -1)
-		fatal("failed to redirect stderr");
 }
 
 static uid_t
@@ -218,30 +240,36 @@ to_gid(const char *grname)
 }
 
 /*
- * Open the report file and redirect stdout into it.
+ * Redirect stdout to report file.
  */
 static void
 open_report(const char *tag)
 {
 	const char	*path;
-	int		 fd;
 	struct stat	 st;
 	uid_t		 uid;
 	gid_t		 gid;
+	mode_t		 mask;
 
 	path = format(CRASH_REPORT_PATH_FMT, tag);
-	fd = open(path, O_CREAT | O_TRUNC | O_WRONLY, 0);
-	if (fd == -1)
-		fatal("%s: failed to open crash report file", path);
-	if (fstat(fd, &st) == -1)
-		fatal("%s: failed to fstat", path);
+
+	if (stat(path, &st) == 0 || errno != ENOENT)
+		fatalx("%s: file already exists", path);
+
+	mask = umask(~0200);
+	if (freopen(path, "w", stdout) == NULL)
+		fatal("%s: failed to redirect stdout to report file", path);
+	(void)umask(mask);
+
+	if (stat(path, &st) < 0)
+		fatal("%s: failed to stat", path);
 	uid = USER == NULL ? geteuid() : to_uid(USER);
 	gid = GROUP == NULL ? getegid() : to_gid(GROUP);
-	if (fchown(fd, uid, gid) == -1)
-		fatal("%s: fchown %d:%d", path, uid, gid);
-	if (fchmod(fd, CRASH_REPORT_MODE) == -1)
-		fatal("%s: fchmod %o", CRASH_REPORT_MODE); 
-	redirect_output(fd);
+	if (chown(path, uid, gid) < 0)
+		fatal("%s: failed to change owner and group to %d:%d", path, USER, GROUP);
+
+	if (chmod(path, CRASH_REPORT_MODE) < 0)
+		fatal("%s: failed to set permissions to %o", CRASH_REPORT_MODE);
 }
 
 static void
@@ -252,6 +280,7 @@ generate_report(const char *tag, struct proc *p, time_t t)
 	report_registers(&p->regs);
 	report_memory_maps(p);
 	report_stack(p);
+	fflush(stdout);
 }
 
 /*
@@ -506,6 +535,37 @@ generate_tag(pid_t pid)
 	return NULL; /* not reached */
 }
 
+/*
+ * Open/redirect the stdout and stderr file descriptors to /dev/null, so that
+ * the numbers of file descriptors that we open afterwards do not conflict with
+ * standard I/O stream file descriptor numbers.
+ */
+static void
+open_std_output_streams(void)
+{
+	const struct tab {
+		int	 stdfd;
+		int	 openflags;
+	} *tab = (const struct tab[]){
+		{ STDOUT_FILENO, O_WRONLY },
+		{ STDERR_FILENO, O_RDWR },
+		{ -1 }
+	};
+	const char	 path[] = "/dev/null";
+	int		 fd;
+
+	while (tab->stdfd != -1) {
+		fd = open(path, tab->openflags);
+		if (fd < 0)
+			exit(EXIT_FAILURE);
+		if (dup2(fd, tab->stdfd) < 0)
+			exit(EXIT_FAILURE);
+		if (fd != tab->stdfd)
+			close(fd);
+		tab++;
+	}
+}
+
 int
 main(int argc, char **argv)
 {
@@ -519,11 +579,6 @@ main(int argc, char **argv)
 	const char	*tag;
 	time_t		 t;
 
-	t = time(NULL);
-
-	openlog(PROGRAM_NAME, 0, LOG_DAEMON);
-	(void) atexit(closelog);
-
 	if (argc >= 2 && !strcmp(argv[1], "--install")) {
 		if (argc >= 3)
 			enable_coredump = atoi(argv[2]);
@@ -536,6 +591,13 @@ main(int argc, char **argv)
 		usage();
 		return EXIT_FAILURE;
 	}
+
+	t = time(NULL);
+
+	open_std_output_streams();
+
+	openlog(PROGRAM_NAME, 0, LOG_DAEMON);
+	(void)atexit(closelog);
 
 	++argv;
 	enable_coredump = atoi(*argv++);
@@ -551,8 +613,7 @@ main(int argc, char **argv)
 	p = proc_attach(tid, pid, sig, uid, gid);
 	unwind(p);
 	generate_report(tag, p, t);
-	fflush(stdout);
-	proc_detach_and_free(p);
+	proc_detach(p);
 	unlink_old_reports();
 
 	return EXIT_SUCCESS;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2015 Equinox Payments, LLC
+ * Copyright (c) 2015 Equinox Payments, LLC
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,30 +14,16 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef UTIL_H
-#define UTIL_H
+#ifndef ELF_LIB_H
+#define ELF_LIB_H
 
 #include <stdbool.h>
 
-enum types {
-	INT,
-	STR
-};
+struct elf;
 
-bool	 get_key_value(const char *, const char *, enum types, ...);
-bool	 starts_with(const char *, const char *);
-char	*chop_newline(char *);
-char	*format(const char *, ...);
-void	 fatalx(const char *, ...);
-void	 fatal(const char *, ...);
-void	 warningx(const char *, ...);
-void	 warning(const char *, ...);
-#ifdef NDEBUG
-#define debug(...)
-#else
-#define debug(...)		_debug(__VA_ARGS__, 0)
-#define _debug(fmt, ...)	debugf("%s(): " fmt, __func__, __VA_ARGS__)
-void	 debugf(const char *, ...);
-#endif
+struct elf	*elf_open(const char *);
+void		 elf_close(struct elf *);
+bool		 elf_is_shared_object(const struct elf *);
+bool		 elf_resolve_sym(const struct elf *, unsigned long, char *, size_t, unsigned long *);
 
 #endif

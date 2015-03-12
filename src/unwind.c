@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 Equinox Payments, LLC
+ * Copyright (c) 2014, 2015 Equinox Payments, LLC
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -658,6 +658,41 @@ guess_unwind(struct proc *p)
 }
 
 /*
+ * Use symbol tables in corresponding ELF files to resolve the names of the
+ * functions in the backtrace.
+ */
+static void
+resolve_func_names(struct proc *p)
+{
+	struct frame	*frame;
+	struct map	*map;
+	char		 name[256];
+	word_t		 addr;
+	unsigned long	 off;
+
+	TAILQ_FOREACH(frame, &p->backtrace, entry) {
+		*name = '\0';
+		LIST_FOREACH(map, &p->maps, entry) {
+			addr = frame->pc;
+			if (map->perm.x
+			    && map->elf != NULL
+			    && addr >= map->start
+			    && addr < map->end) {
+				frame->map = map;
+				if (elf_is_shared_object(map->elf))
+					addr -= map->start;
+				frame->func.addr = addr;
+				if (elf_resolve_sym(map->elf, addr, name, sizeof name, &off)) {
+					frame->func.name = xstrdup(name);
+					frame->func.off = (word_t)off;
+				}
+				break;
+			}
+		}
+	}
+}
+
+/*
  * Unwind the call frames of proc.
  */
 void
@@ -679,5 +714,7 @@ unwind(struct proc *p)
 		guess_unwind(p);
 	else
 		smart_unwind(p);
+
+	resolve_func_names(p);
 }
 

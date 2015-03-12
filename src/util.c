@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 Equinox Payments, LLC
+ * Copyright (c) 2014, 2015 Equinox Payments, LLC
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -185,7 +185,7 @@ fatal(const char *fmt, ...)
  * Output a warning message to syslog.
  */
 void
-warning(const char *fmt, ...)
+warningx(const char *fmt, ...)
 {
 	va_list	 ap;
 
@@ -194,12 +194,35 @@ warning(const char *fmt, ...)
 	va_end(ap);
 }
 
+/*
+ * Same as warningx(), but appends errno and description of errno to message.
+ */
+void
+warning(const char *fmt, ...)
+{
+	va_list		 ap;
+	char		 buf[4096];
+	size_t		 len;
+	int		 code;
+
+	code = errno;
+
+	va_start(ap, fmt);
+	(void) vsnprintf(buf, sizeof buf, fmt, ap);
+	va_end(ap);
+
+	len = strlen(buf);
+	(void) snprintf(buf + len, sizeof(buf) - len, ": %d, %s", code, strerror(code));
+
+	syslog(LOG_WARNING, "%s", buf);
+}
+
 #ifndef NDEBUG
 /*
  * Output a debug message to syslog.
  */
 void
-debug(const char *fmt, ...)
+debugf(const char *fmt, ...)
 {
 	va_list	 ap;
 

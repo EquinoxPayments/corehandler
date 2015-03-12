@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 Equinox Payments, LLC
+ * Copyright (c) 2014, 2015 Equinox Payments, LLC
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -177,6 +177,11 @@ parse_maps(struct proc *proc)
 				break;
 			}
 		}
+		if (map->perm.x) {
+			p = strrchr(line, ' ');
+			if (p != NULL)
+				map->elf = elf_open(p + 1);
+		}
 		LIST_INSERT_HEAD(&proc->maps, map, entry);
 	}
 
@@ -231,6 +236,8 @@ free_maps(struct maps *maps)
 		next = LIST_NEXT(m, entry);
 		LIST_REMOVE(m, entry);
 		free(m->str);
+		if (m->elf != NULL)
+			elf_close(m->elf);
 		free(m);
 		m = next;
 	}
@@ -245,6 +252,7 @@ free_backtrace(struct backtrace *bt)
 	while (f != NULL) {
 		next = TAILQ_NEXT(f, entry);
 		TAILQ_REMOVE(bt, f, entry);
+		free(f->func.name);
 		free(f);
 		f = next;
 	}
@@ -255,7 +263,7 @@ free_backtrace(struct backtrace *bt)
  * uses.
  */
 void
-proc_detach_and_free(struct proc *p)
+proc_detach(struct proc *p)
 {
 	char		**argp;
 

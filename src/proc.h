@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 Equinox Payments, LLC
+ * Copyright (c) 2014, 2015 Equinox Payments, LLC
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include "elf_lib.h"
 
 /* Max number of arguments to parse from /proc/<pid>/cmdline. */
 #define PROC_MAX_ARGV	24
@@ -46,6 +47,7 @@ struct map {
 		bool	 w;	/* write */
 		bool	 x;	/* execute */
 	} perm;
+	struct elf	*elf;	/* handle for the corresponding ELF file */
 };
 
 /*
@@ -57,6 +59,12 @@ struct frame {
 	word_t			 sp;	/* Address of the call frame. */
 	word_t			 size;	/* In bytes. */
 	word_t			 lrpos;	/* Word offset of saved LR value in the frame, counting from beginning of frame. */
+	struct map		*map;	/* Memory map into which PC is pointing. */
+	struct {
+		char		*name;	/* Name of function into which PC is pointing. */
+		word_t		 off;	/* Offset from beginning of function PC is pointing at. */
+		word_t		 addr;	/* Value of PC translated into an "ELF address", this is what gdb will show you if you open the file and `i addr <function>`. */
+	} func;
 };
 
 /*
@@ -78,7 +86,7 @@ struct proc {
 };
 
 struct proc	*proc_attach(pid_t, pid_t, int, uid_t, gid_t);
-void		 proc_detach_and_free(struct proc *);
+void		 proc_detach(struct proc *);
 word_t		 peek(struct proc *, word_t);
 
 #endif
